@@ -19,6 +19,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+/* Added for Synchronization */
+#include <mutex>
+#include <condition_variable>
+#include <mpi.h>
+/* End Added Block*/
 
 namespace fasttext {
 
@@ -637,10 +642,24 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
 
   const int64_t ntokens = dict_->ntokens();
   int64_t localTokenCount = 0;
+  int64_t tokenCountForSync = 0;        // <- Added, required for MPI synchronization
   std::vector<int32_t> line, labels;
   uint64_t callbackCounter = 0;
   try {
     while (keepTraining(ntokens)) {
+      /* Added for Synchronization */
+      if (threadId != 0 && !syncCtx_.syncReady.load(std::memory_order_acquire)) { // <- Check if synchronization is needed
+        std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
+        syncCtx_.waitingThreads++;
+        while (!syncCtx_.syncReady.load(std::memory_order_acquire)) {
+          syncCtx_.syncTresholdCondVar.wait(lock); // <- Wait for synchronization signal
+        }
+        syncCtx_.waitingThreads--;
+        lock.unlock();
+      }
+      /* End Added Block*/
+
+
       real progress = real(tokenCount_) / (args_->epoch * ntokens);
       if (callback && ((callbackCounter++ % 64) == 0)) {
         double wst;
@@ -663,11 +682,42 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
       }
       if (localTokenCount > args_->lrUpdateRate) {
         tokenCount_ += localTokenCount;
+        tokenCountForSync += localTokenCount; // <- Added, required for MPI sync
         localTokenCount = 0;
         if (threadId == 0 && args_->verbose > 1) {
           loss_ = state.getLoss();
         }
       }
+      /* Added for Synchronization */
+      if (threadId == 0 && tokenCountForSync > args_->tokenCountSyncThreshold) {
+        syncCtx_.syncReady.store(false, std::memory_order_release);
+
+        // Periodically lock the mutex to synchronize threads
+        bool allThreadsWaiting = false;
+        do {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Busy waiting, but it's only one thread so it <should> be fine
+          std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
+          allThreadsWaiting = (syncCtx_.waitingThreads == args_->thread - 1); 
+        } while (!allThreadsWaiting);
+
+        // Every thread has blocked, so we can now synchronize
+        // Print for debug
+        if (args_->verbose > 1) {
+          std::cout << "Synchronizing threads, token count: "
+                    << tokenCountForSync << std::endl;
+        }
+        // (Do MPI Stuff)
+        model_->synchronize();
+
+        // Reset the token count for synchronization
+        {
+          std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
+          tokenCountForSync = 0;
+          syncCtx_.syncReady.store(true, std::memory_order_release);
+          syncCtx_.syncTresholdCondVar.notify_all();
+        }
+      }
+      /* End Added block */
     }
   } catch (DenseMatrix::EncounteredNaNError&) {
     trainException_ = std::current_exception();
@@ -766,6 +816,8 @@ void FastText::train(const Args& args, const TrainCallback& callback) {
   bool normalizeGradient = (args_->model == model_name::sup);
   model_ = std::make_shared<Model>(input_, output_, loss, normalizeGradient);
   startThreads(callback);
+  MPI_Barrier(MPI_COMM_WORLD); // Ensure all threads are done before proceeding
+  MPI_Finalize(); // Finalize MPI after training is done 
 }
 
 void FastText::abort() {
@@ -777,10 +829,14 @@ void FastText::abort() {
 }
 
 void FastText::startThreads(const TrainCallback& callback) {
+  MPI_Init(nullptr, nullptr);
   start_ = std::chrono::steady_clock::now();
   tokenCount_ = 0;
   loss_ = -1;
   trainException_ = nullptr;
+
+  /* Synchronization Primitives */
+  /* End Synchronization Primitives*/
   std::vector<std::thread> threads;
   if (args_->thread > 1) {
     for (int32_t i = 0; i < args_->thread; i++) {
@@ -813,6 +869,9 @@ void FastText::startThreads(const TrainCallback& callback) {
     printInfo(1.0, loss_, std::cerr);
     std::cerr << std::endl;
   }
+
+  // Synchronization
+  // 
 }
 
 int FastText::getDimension() const {

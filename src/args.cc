@@ -34,6 +34,7 @@ Args::Args() {
   maxn = 6;
   thread = 12;
   lrUpdateRate = 100;
+  tokenCountSyncThreshold = 1000000; // 1 million tokens
   t = 1e-4;
   label = "__label__";
   verbose = 2;
@@ -139,6 +140,8 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         lr = std::stof(args.at(ai + 1));
       } else if (args[ai] == "-lrUpdateRate") {
         lrUpdateRate = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-syncThreshold") {
+        tokenCountSyncThreshold = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-dim") {
         dim = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-ws") {

@@ -18,6 +18,8 @@
 #include <queue>
 #include <set>
 #include <tuple>
+#include <mutex>
+#include <condition_variable>
 
 #include "args.h"
 #include "densematrix.h"
@@ -37,6 +39,16 @@ class FastText {
       std::function<void(float, float, double, double, int64_t)>;
 
  protected:
+
+  struct SynchronizationContext {
+    std::mutex syncTresholdMutex;
+    std::condition_variable syncTresholdCondVar;
+    std::atomic<bool> syncReady{true};
+    int32_t waitingThreads{0};
+  };
+
+  SynchronizationContext syncCtx_;
+
   std::shared_ptr<Args> args_;
   std::shared_ptr<Dictionary> dict_;
   std::shared_ptr<Matrix> input_;

@@ -77,6 +77,9 @@ class DenseMatrix : public Matrix {
   void load(std::istream&) override;
   void dump(std::ostream&) const override;
 
+  // Synchronization functions
+  void synchronize(MPI_Comm comm) override;
+
   class EncounteredNaNError : public std::runtime_error {
    public:
     EncounteredNaNError() : std::runtime_error("Encountered NaN.") {}

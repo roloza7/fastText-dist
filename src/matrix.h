@@ -16,6 +16,8 @@
 #include <assert.h>
 #include "real.h"
 
+#include <mpi.h>
+
 namespace fasttext {
 
 class Vector;
@@ -40,6 +42,7 @@ class Matrix {
   virtual void save(std::ostream&) const = 0;
   virtual void load(std::istream&) = 0;
   virtual void dump(std::ostream&) const = 0;
+  virtual void synchronize(MPI_Comm comm) = 0;
 };
 
 } // namespace fasttext

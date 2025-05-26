@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <iostream>
 #include <stdexcept>
+#include <mpi.h>
 
 namespace fasttext {
 
@@ -120,6 +121,11 @@ void QuantMatrix::load(std::istream& in) {
 
 void QuantMatrix::dump(std::ostream&) const {
   throw std::runtime_error("Operation not permitted on quantized matrices.");
+}
+
+void QuantMatrix::synchronize(MPI_Comm comm) {
+  // No-op for quantized matrices, as they are already in memory.
+  // If needed, implement synchronization logic here.
 }
 
 } // namespace fasttext

@@ -40,6 +40,7 @@ class Args {
   std::string output;
   double lr;
   int lrUpdateRate;
+  int tokenCountSyncThreshold; // for distributed training
   int dim;
   int ws;
   int epoch;
