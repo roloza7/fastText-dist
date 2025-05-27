@@ -10,6 +10,7 @@
 #include <iostream>
 #include <queue>
 #include <stdexcept>
+#include <mpi.h>
 #include "args.h"
 #include "autotune.h"
 #include "fasttext.h"
@@ -361,6 +362,9 @@ void train(const std::vector<std::string> args) {
   std::shared_ptr<FastText> fasttext = std::make_shared<FastText>();
   std::string outputFileName;
 
+  if (a.nodes > 1)
+    MPI_Init(nullptr, nullptr); 
+
   if (a.hasAutotune() &&
       a.getAutotuneModelSize() != Args::kUnlimitedModelSize) {
     outputFileName = a.output + ".ftz";
@@ -379,6 +383,16 @@ void train(const std::vector<std::string> args) {
   } else {
     fasttext->train(a);
   }
+
+  if (a.nodes > 1) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Finalize();
+    if (rank != 0) {
+      return; // Only the master node saves the model.
+    }
+  }
+
   fasttext->saveModel(outputFileName);
   fasttext->saveVectors(a.output + ".vec");
   if (a.saveOutput) {

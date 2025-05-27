@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-CXX = c++
+CXX = mpic++
 CXXFLAGS = -pthread -std=c++17 -march=native
 OBJS = args.o autotune.o matrix.o dictionary.o loss.o productquantizer.o densematrix.o quantmatrix.o vector.o model.o utils.o meter.o fasttext.o
 INCLUDES = -I.

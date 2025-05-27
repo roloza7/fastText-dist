@@ -69,6 +69,7 @@ class Model {
       real lr,
       State& state);
   void computeHidden(const std::vector<int32_t>& input, State& state) const;
+  void sync();
 
   real std_log(real) const;
 

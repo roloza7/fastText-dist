@@ -122,4 +122,8 @@ void QuantMatrix::dump(std::ostream&) const {
   throw std::runtime_error("Operation not permitted on quantized matrices.");
 }
 
+void QuantMatrix::sync() {
+  throw std::runtime_error("Operation not permitted on quantized matrices.");
+}
+
 } // namespace fasttext

@@ -40,6 +40,7 @@ class Matrix {
   virtual void save(std::ostream&) const = 0;
   virtual void load(std::istream&) = 0;
   virtual void dump(std::ostream&) const = 0;
+  virtual void sync() = 0;
 };
 
 } // namespace fasttext

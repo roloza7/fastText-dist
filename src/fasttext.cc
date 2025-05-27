@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <mpi.h>
 
 namespace fasttext {
 
@@ -631,14 +632,37 @@ bool FastText::keepTraining(const int64_t ntokens) const {
 
 void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
   std::ifstream ifs(args_->input);
-  utils::seek(ifs, threadId * utils::size(ifs) / args_->thread);
 
-  Model::State state(args_->dim, output_->size(0), threadId + args_->seed);
+  int64_t seekPos;
+  int64_t ntokens;
+  Model::State* state;
+  if (args_->nodes > 1) {
+    int rank;
+    int worldSize;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
 
-  const int64_t ntokens = dict_->ntokens();
+    int64_t fileSize = utils::size(ifs);
+    int64_t chunkSize = fileSize / (worldSize * args_->thread);
+
+    int64_t chunkIndex = rank * args_->thread + threadId;
+    seekPos = chunkIndex * chunkSize;
+
+    state = new Model::State(args_->dim, output_->size(0), chunkIndex + args_->seed);
+
+    ntokens = dict_->ntokens() / worldSize;
+
+  } else {
+    seekPos = threadId * utils::size(ifs) / args_->thread;
+    state = new Model::State(args_->dim, output_->size(0), threadId + args_->seed);
+    ntokens = dict_->ntokens();
+  }
+
   int64_t localTokenCount = 0;
   std::vector<int32_t> line, labels;
   uint64_t callbackCounter = 0;
+  utils::seek(ifs, seekPos);
+
   try {
     while (keepTraining(ntokens)) {
       real progress = real(tokenCount_) / (args_->epoch * ntokens);
@@ -653,27 +677,31 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
       real lr = args_->lr * (1.0 - progress);
       if (args_->model == model_name::sup) {
         localTokenCount += dict_->getLine(ifs, line, labels);
-        supervised(state, lr, line, labels);
+        supervised(*state, lr, line, labels);
       } else if (args_->model == model_name::cbow) {
-        localTokenCount += dict_->getLine(ifs, line, state.rng);
-        cbow(state, lr, line);
+        localTokenCount += dict_->getLine(ifs, line, state->rng);
+        cbow(*state, lr, line);
       } else if (args_->model == model_name::sg) {
-        localTokenCount += dict_->getLine(ifs, line, state.rng);
-        skipgram(state, lr, line);
+        localTokenCount += dict_->getLine(ifs, line, state->rng);
+        skipgram(*state, lr, line);
       }
       if (localTokenCount > args_->lrUpdateRate) {
         tokenCount_ += localTokenCount;
         localTokenCount = 0;
         if (threadId == 0 && args_->verbose > 1) {
-          loss_ = state.getLoss();
+          loss_ = state->getLoss();
         }
+      }
+      if (threadId == 0 && callbackCounter % 2 == 0 && args_->nodes > 1) {
+          model_->sync();
       }
     }
   } catch (DenseMatrix::EncounteredNaNError&) {
     trainException_ = std::current_exception();
   }
   if (threadId == 0)
-    loss_ = state.getLoss();
+    loss_ = state->getLoss();
+
   ifs.close();
 }
 
@@ -790,7 +818,14 @@ void FastText::startThreads(const TrainCallback& callback) {
     // webassembly can't instantiate `std::thread`
     trainThread(0, callback);
   }
-  const int64_t ntokens = dict_->ntokens();
+  int64_t ntokens;
+  if (args_->nodes > 1) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    ntokens = dict_->ntokens() / args_->nodes;
+  } else {
+    ntokens = dict_->ntokens();
+  }
   // Same condition as trainThread
   while (keepTraining(ntokens)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <mpi.h>
 #include "utils.h"
 #include "vector.h"
 
@@ -260,6 +261,65 @@ void DenseMatrix::dump(std::ostream& out) const {
     }
     out << std::endl;
   }
+};
+
+void DenseMatrix::sync() {
+  // Adding a second layer of Hogwild! here, on top of the multithreading
+
+  if (!init_mpi_) {
+    for (auto& req : sends_) {
+      req = MPI_REQUEST_NULL;
+    }
+    recv_request_ = MPI_REQUEST_NULL;
+    recv_buffer_ = intgemm::AlignedVector<real>(m_ * n_);
+    init_mpi_ = true;
+  }
+
+  const int matrix_size = m_ * n_;
+
+  int world_size;
+  int rank;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  // Get random target for interpolation.
+  int r = rand() % (world_size - 1);
+  r = (r >= rank) ? r + 1 : r;
+  // 1. check sends_ (array of MPI_Request) is used to track the latest send operation
+  int i;
+  for (i = 0; i < 4; i++) {
+    // Check for first completed or cancelled request, ans signal the spot is free.
+    if (sends_[i] != MPI_REQUEST_NULL) {
+      int flag;
+      MPI_Test(&sends_[i], &flag, MPI_STATUS_IGNORE);
+      if (flag) {
+        latest_send_ = i;
+        sends_[i] = MPI_REQUEST_NULL; // Mark the request as completed.
+        break;
+      }
+    }
+  }
+
+  // If we didn't find a free spot, we don't send anything.
+  if (i < 4)
+    MPI_Isend(data_.data(), matrix_size, MPI_FLOAT, r, 0, MPI_COMM_WORLD, &sends_[i]);
+
+  if (recv_request_ != MPI_REQUEST_NULL) {
+    // If we have a pending receive request, check if it is completed.
+    int flag;
+    MPI_Test(&recv_request_, &flag, MPI_STATUS_IGNORE);
+    if (flag) {
+      // Interpolate the received data.
+      for (int64_t j = 0; j < matrix_size; j++) {
+        data_[j] = recv_buffer_[j]* (1.0 - t_) + data_[j] * t_;
+      }
+      // Reset the receive request.
+      recv_request_ = MPI_REQUEST_NULL;
+    }
+  } else {
+    MPI_Irecv(recv_buffer_.data(), matrix_size, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &recv_request_);
+  }
+
 };
 
 } // namespace fasttext
