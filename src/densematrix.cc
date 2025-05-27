@@ -263,7 +263,7 @@ void DenseMatrix::dump(std::ostream& out) const {
   }
 };
 
-void DenseMatrix::sync() {
+void DenseMatrix::sync(int tag, real loss) {
   // Adding a second layer of Hogwild! here, on top of the multithreading
 
   if (!init_mpi_) {
@@ -271,7 +271,8 @@ void DenseMatrix::sync() {
       req = MPI_REQUEST_NULL;
     }
     recv_request_ = MPI_REQUEST_NULL;
-    recv_buffer_ = intgemm::AlignedVector<real>(m_ * n_);
+    recv_buffer_ = intgemm::AlignedVector<real>(m_ * n_ + 1);
+    send_buffer_ = intgemm::AlignedVector<real>(m_ * n_ * 4 + 4);
     init_mpi_ = true;
   }
 
@@ -282,9 +283,13 @@ void DenseMatrix::sync() {
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+  // DEBUG: Wait 100ms
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+
   // Get random target for interpolation.
-  int r = rand() % (world_size - 1);
-  r = (r >= rank) ? r + 1 : r;
+  int r = rand() % (world_size);
+  r = (r == rank) ? (r + 1) % world_size : r; // Avoid self-interaction.
   // 1. check sends_ (array of MPI_Request) is used to track the latest send operation
   int i;
   for (i = 0; i < 4; i++) {
@@ -293,23 +298,45 @@ void DenseMatrix::sync() {
       int flag;
       MPI_Test(&sends_[i], &flag, MPI_STATUS_IGNORE);
       if (flag) {
+        MPI_Wait(&sends_[i], MPI_STATUS_IGNORE);
         latest_send_ = i;
         sends_[i] = MPI_REQUEST_NULL; // Mark the request as completed.
         break;
       }
+      continue; // If not completed, continue to the next request.
     }
+    break; // Found a free spot.
   }
 
   // If we didn't find a free spot, we don't send anything.
-  if (i < 4)
-    MPI_Isend(data_.data(), matrix_size, MPI_FLOAT, r, 0, MPI_COMM_WORLD, &sends_[i]);
+  if (i < 4) {
+    // Prepare the send buffer with the data and loss value.
+    // i * matrix_size + matrix_size is the position for the loss value. (we will only send that slice)
+    mempcpy(send_buffer_.data() + i * matrix_size, data_.data(), matrix_size * sizeof(real));
+    send_buffer_[i * matrix_size + matrix_size] = loss; // Store the loss value at the end of the slice.
 
+    MPI_Isend(send_buffer_.data() + i * matrix_size, matrix_size + 1, MPI_FLOAT, r, tag, MPI_COMM_WORLD, &sends_[i]);
+    // MPI_Isend(data_.data(), matrix_size, MPI_FLOAT, r, tag, MPI_COMM_WORLD, &sends_[i]);
+  }
   if (recv_request_ != MPI_REQUEST_NULL) {
     // If we have a pending receive request, check if it is completed.
     int flag;
-    MPI_Test(&recv_request_, &flag, MPI_STATUS_IGNORE);
+    MPI_Status status;
+    MPI_Test(&recv_request_, &flag, &status);
     if (flag) {
+      int count;
+      MPI_Get_count(&status, MPI_FLOAT, &count);
+      if (count != matrix_size + 1) {
+        std::cout << "Received data size: " << count << ", expected size: " << matrix_size << std::endl;
+        throw std::runtime_error("Received data size does not match expected size.");
+      }
       // Interpolate the received data.
+      MPI_Wait(&recv_request_, MPI_STATUS_IGNORE);
+      real other_loss = recv_buffer_[matrix_size]; // The last element is the loss value.
+
+      // Interpolate towards lower loss.
+      t_ = (loss < other_loss) ? 0.8 : other_loss / (loss + other_loss);
+
       for (int64_t j = 0; j < matrix_size; j++) {
         data_[j] = recv_buffer_[j]* (1.0 - t_) + data_[j] * t_;
       }
@@ -317,7 +344,7 @@ void DenseMatrix::sync() {
       recv_request_ = MPI_REQUEST_NULL;
     }
   } else {
-    MPI_Irecv(recv_buffer_.data(), matrix_size, MPI_FLOAT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &recv_request_);
+    MPI_Irecv(recv_buffer_.data(), matrix_size + 1, MPI_FLOAT, MPI_ANY_SOURCE, tag, MPI_COMM_WORLD, &recv_request_);
   }
 
 };

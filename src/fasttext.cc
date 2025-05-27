@@ -661,6 +661,7 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
   int64_t localTokenCount = 0;
   std::vector<int32_t> line, labels;
   uint64_t callbackCounter = 0;
+  uint64_t syncCounter = 0;
   utils::seek(ifs, seekPos);
 
   try {
@@ -692,8 +693,8 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
           loss_ = state->getLoss();
         }
       }
-      if (threadId == 0 && callbackCounter % 2 == 0 && args_->nodes > 1) {
-          model_->sync();
+      if (threadId == 0 && (syncCounter++ % 2) == 0 && args_->nodes > 1) {
+          model_->sync(loss_);
       }
     }
   } catch (DenseMatrix::EncounteredNaNError&) {

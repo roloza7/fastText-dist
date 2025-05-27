@@ -56,7 +56,7 @@ class QuantMatrix : public Matrix {
   void save(std::ostream&) const override;
   void load(std::istream&) override;
   void dump(std::ostream&) const override;
-  void sync() override;
+  void sync(int, real) override;
 };
 
 } // namespace fasttext

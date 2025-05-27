@@ -90,9 +90,9 @@ real Model::std_log(real x) const {
   return std::log(x + 1e-5);
 }
 
-void Model::sync() {
-  wi_->sync();
-  wo_->sync();
+void Model::sync(real loss) {
+  wi_->sync(0, loss);
+  wo_->sync(1, loss);
 }
 
 } // namespace fasttext
