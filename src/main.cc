@@ -361,6 +361,14 @@ void train(const std::vector<std::string> args) {
   std::shared_ptr<FastText> fasttext = std::make_shared<FastText>();
   std::string outputFileName;
 
+  if (a.tokenCountSyncThreshold > 0) {
+    std::cout << "Using MPI for distributed training." << std::endl;
+    MPI_Init(nullptr, nullptr);
+    
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  }
+
   if (a.hasAutotune() &&
       a.getAutotuneModelSize() != Args::kUnlimitedModelSize) {
     outputFileName = a.output + ".ftz";
@@ -379,11 +387,25 @@ void train(const std::vector<std::string> args) {
   } else {
     fasttext->train(a);
   }
+  
+  if (a.tokenCountSyncThreshold > 0) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (rank > 0) {
+      // Only the first rank saves the model
+      MPI_Finalize();
+      return;
+    }
+  } 
+
   fasttext->saveModel(outputFileName);
   fasttext->saveVectors(a.output + ".vec");
   if (a.saveOutput) {
     fasttext->saveOutput(a.output + ".output");
   }
+
+  if (a.tokenCountSyncThreshold > 0)
+    MPI_Finalize();
 }
 
 void dump(const std::vector<std::string>& args) {

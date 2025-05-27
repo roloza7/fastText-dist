@@ -34,7 +34,7 @@ Args::Args() {
   maxn = 6;
   thread = 12;
   lrUpdateRate = 100;
-  tokenCountSyncThreshold = 1000000; // 1 million tokens
+  tokenCountSyncThreshold = 0; // 0 tokens <- no synchronization
   t = 1e-4;
   label = "__label__";
   verbose = 2;

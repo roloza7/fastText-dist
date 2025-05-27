@@ -55,6 +55,7 @@ class FastText {
   std::shared_ptr<Matrix> output_;
   std::shared_ptr<Model> model_;
   std::atomic<int64_t> tokenCount_{};
+  std::atomic<int64_t> globalTokenCount_{};
   std::atomic<real> loss_{};
   std::chrono::steady_clock::time_point start_;
   bool quant_;
@@ -178,5 +179,9 @@ class FastText {
    public:
     AbortError() : std::runtime_error("Aborted.") {}
   };
+
+  std::vector<std::string> listFilesInDirectory(
+      const std::string& dir) const;
+
 };
 } // namespace fasttext

@@ -23,6 +23,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <mpi.h>
+#include <dirent.h>
+#include <sys/types.h>
+
 /* End Added Block*/
 
 namespace fasttext {
@@ -647,8 +650,8 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
   uint64_t callbackCounter = 0;
   try {
     while (keepTraining(ntokens)) {
-      /* Added for Synchronization */
-      if (threadId != 0 && !syncCtx_.syncReady.load(std::memory_order_acquire)) { // <- Check if synchronization is needed
+      /* Added for Synchronization (skipped if no sync threshold) */
+      if (args_->tokenCountSyncThreshold > 0 && threadId != 0 && !syncCtx_.syncReady.load(std::memory_order_acquire)) { // <- Check if synchronization is needed
         std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
         syncCtx_.waitingThreads++;
         while (!syncCtx_.syncReady.load(std::memory_order_acquire)) {
@@ -671,6 +674,7 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
       }
       real lr = args_->lr * (1.0 - progress);
       if (args_->model == model_name::sup) {
+        // debug: wait
         localTokenCount += dict_->getLine(ifs, line, labels);
         supervised(state, lr, line, labels);
       } else if (args_->model == model_name::cbow) {
@@ -689,7 +693,7 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
         }
       }
       /* Added for Synchronization */
-      if (threadId == 0 && tokenCountForSync > args_->tokenCountSyncThreshold) {
+      if (args_->tokenCountSyncThreshold > 0 && threadId == 0 && tokenCountForSync > args_->tokenCountSyncThreshold) {
         syncCtx_.syncReady.store(false, std::memory_order_release);
 
         // Periodically lock the mutex to synchronize threads
@@ -702,7 +706,7 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
 
         // Every thread has blocked, so we can now synchronize
         // Print for debug
-        if (args_->verbose > 1) {
+        if (args_->verbose > 2) { // This will spam the console, so use with caution
           std::cout << "Synchronizing threads, token count: "
                     << tokenCountForSync << std::endl;
         }
@@ -712,6 +716,15 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
         // Reset the token count for synchronization
         {
           std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
+
+          int tokensAddedSinceLastSync;
+          MPI_Allreduce(
+              &tokenCountForSync, &tokensAddedSinceLastSync, 1, MPI_INT64_T,
+              MPI_SUM, MPI_COMM_WORLD);
+          
+          tokenCount_ += tokensAddedSinceLastSync - tokenCountForSync; // <- Update the global token count (account for double addition since we have been adding to it in each thread)
+
+
           tokenCountForSync = 0;
           syncCtx_.syncReady.store(true, std::memory_order_release);
           syncCtx_.syncTresholdCondVar.notify_all();
@@ -790,6 +803,35 @@ std::shared_ptr<Matrix> FastText::createTrainOutputMatrix() const {
   return output;
 }
 
+std::vector<std::string> FastText::listFilesInDirectory(const std::string& dir) const {
+  std::vector<std::string> files;
+  
+  DIR* dp;
+  struct dirent* entry;
+
+  dp = opendir(dir.c_str());
+  if (dp != nullptr) {
+    while ((entry = readdir(dp)) != nullptr) {
+      std::string fname = entry->d_name;
+      if (fname != "." && fname != "..") {
+        std::ifstream file(dir + "/" + fname);
+        if (file.is_open()) {
+          // Check if the file is readable
+          file.close();
+          files.push_back(dir + "/" + fname);
+        } else {
+          std::cerr << "Warning: Unable to open file " << fname
+                    << " in directory " << dir << std::endl;
+        }
+      }
+    }
+    closedir(dp);
+  }
+
+  return files;
+}
+
+
 void FastText::train(const Args& args, const TrainCallback& callback) {
   args_ = std::make_shared<Args>(args);
   dict_ = std::make_shared<Dictionary>(args_);
@@ -797,13 +839,47 @@ void FastText::train(const Args& args, const TrainCallback& callback) {
     // manage expectations
     throw std::invalid_argument("Cannot use stdin for training!");
   }
-  std::ifstream ifs(args_->input);
-  if (!ifs.is_open()) {
-    throw std::invalid_argument(
-        args_->input + " cannot be opened for training!");
+
+  if (args_->tokenCountSyncThreshold == 0) {
+    std::ifstream ifs(args_->input);
+    if (!ifs.is_open()) {
+      throw std::invalid_argument(
+          args_->input + " cannot be opened for reading!");
+    }
+    dict_->readFromFile(ifs);
+    ifs.close();
+  } else {
+  
+    std::vector<std::string> files = listFilesInDirectory(args_->input);
+    if (files.empty()) {
+      throw std::invalid_argument(
+          "No files found in the specified directory: " + args_->input);
+    }
+    if (args_->verbose > 0) {
+      std::cerr << "Reading " << files.size() << " files from " << args_->input
+                << std::endl;
+    }  
+
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    if (world_size != files.size()) {
+      throw std::invalid_argument(
+          "Number of MPI processes must match the number of files in the input directory. (Open an Issue if you need this feature.)");
+    }
+
+    // Build shared vocabulary
+    dict_->readFromFiles(files);
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    args_->input = files[rank];
+    MPI_Barrier(MPI_COMM_WORLD); // Ensure all ranks are done reading files before proceeding
+    if (args_->verbose > 0) {
+      std::cerr << "Rank " << rank << " reading file: " << args_->input
+                << std::endl;
+    }
   }
-  dict_->readFromFile(ifs);
-  ifs.close();
 
   if (!args_->pretrainedVectors.empty()) {
     input_ = getInputMatrixFromFile(args_->pretrainedVectors);
@@ -816,8 +892,12 @@ void FastText::train(const Args& args, const TrainCallback& callback) {
   bool normalizeGradient = (args_->model == model_name::sup);
   model_ = std::make_shared<Model>(input_, output_, loss, normalizeGradient);
   startThreads(callback);
-  MPI_Barrier(MPI_COMM_WORLD); // Ensure all threads are done before proceeding
-  MPI_Finalize(); // Finalize MPI after training is done 
+
+  if (args_ -> tokenCountSyncThreshold > 0) {
+    // Synchronization for distributed training
+    // This is a simple barrier to ensure all ranks are done training before proceeding
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
 }
 
 void FastText::abort() {
@@ -829,14 +909,11 @@ void FastText::abort() {
 }
 
 void FastText::startThreads(const TrainCallback& callback) {
-  MPI_Init(nullptr, nullptr);
   start_ = std::chrono::steady_clock::now();
   tokenCount_ = 0;
   loss_ = -1;
   trainException_ = nullptr;
 
-  /* Synchronization Primitives */
-  /* End Synchronization Primitives*/
   std::vector<std::thread> threads;
   if (args_->thread > 1) {
     for (int32_t i = 0; i < args_->thread; i++) {
@@ -869,9 +946,6 @@ void FastText::startThreads(const TrainCallback& callback) {
     printInfo(1.0, loss_, std::cerr);
     std::cerr << std::endl;
   }
-
-  // Synchronization
-  // 
 }
 
 int FastText::getDimension() const {
