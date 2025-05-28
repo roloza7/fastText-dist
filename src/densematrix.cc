@@ -18,6 +18,8 @@
 #include "utils.h"
 #include "vector.h"
 
+#include <mpi.h>
+
 #if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
 #include <immintrin.h>
 #endif
@@ -265,6 +267,7 @@ void DenseMatrix::dump(std::ostream& out) const {
   }
 };
 
+<<<<<<< HEAD
 int DenseMatrix::sync(int tag, real loss) {
   // Adding a second layer of Hogwild! here, on top of the multithreading
   if (!init_mpi_) {
@@ -415,3 +418,25 @@ int DenseMatrix::sync(int tag, real loss) {
   // }
 
 } // namespace fasttext
+=======
+void DenseMatrix::synchronize(MPI_Comm comm) {
+  // No-op for dense matrices, as they are already in memory.
+  int count = data_.size();
+
+  intgemm::AlignedVector<real> recv_buffer(count);
+
+  MPI_Allreduce(data_.data(), recv_buffer.data(), count, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+
+  int rank_count;
+  MPI_Comm_size(comm, &rank_count);
+
+  // Divide by the number of ranks to average the values.
+  for (int i = 0; i < count; ++i) {
+    recv_buffer[i] /= static_cast<real>(rank_count);
+  }
+
+  data_ = std::move(recv_buffer);
+}
+
+}
+>>>>>>> main

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <mpi.h>
 
 namespace fasttext {
 
@@ -84,6 +85,13 @@ void Model::update(
   for (auto it = input.cbegin(); it != input.cend(); ++it) {
     wi_->addVectorToRow(grad, *it, 1.0);
   }
+}
+
+void Model::synchronize(void) {
+  // This is a no-op in the current implementation, but it can be overridden
+  // in derived classes if needed.
+  wi_->synchronize(MPI_COMM_WORLD);
+  wo_->synchronize(MPI_COMM_WORLD);
 }
 
 real Model::std_log(real x) const {

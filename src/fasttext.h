@@ -18,6 +18,8 @@
 #include <queue>
 #include <set>
 #include <tuple>
+#include <mutex>
+#include <condition_variable>
 
 #include "args.h"
 #include "densematrix.h"
@@ -37,12 +39,23 @@ class FastText {
       std::function<void(float, float, double, double, int64_t)>;
 
  protected:
+
+  struct SynchronizationContext {
+    std::mutex syncTresholdMutex;
+    std::condition_variable syncTresholdCondVar;
+    std::atomic<bool> syncReady{true};
+    int32_t waitingThreads{0};
+  };
+
+  SynchronizationContext syncCtx_;
+
   std::shared_ptr<Args> args_;
   std::shared_ptr<Dictionary> dict_;
   std::shared_ptr<Matrix> input_;
   std::shared_ptr<Matrix> output_;
   std::shared_ptr<Model> model_;
   std::atomic<int64_t> tokenCount_{};
+  std::atomic<int64_t> globalTokenCount_{};
   std::atomic<real> loss_{};
   std::chrono::steady_clock::time_point start_;
   bool quant_;
@@ -166,5 +179,9 @@ class FastText {
    public:
     AbortError() : std::runtime_error("Aborted.") {}
   };
+
+  std::vector<std::string> listFilesInDirectory(
+      const std::string& dir) const;
+
 };
 } // namespace fasttext

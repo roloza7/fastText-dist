@@ -23,17 +23,17 @@ export LANG=en_US.UTF-8
 NOW=$(date +"%Y%m%d")
 
 ROOT="data/wikimedia/${NOW}"
-mkdir -p "${ROOT}"
-echo "Saving data in ""$ROOT"
-read -r -p "Choose a language (e.g. en, bh, fr, etc.): " choice
-LANG="$choice"
-echo "Chosen language: ""$LANG"
-read -r -p "Continue to download (WARNING: This might be big and can take a long time!)(y/n)? " choice
-case "$choice" in
-  y|Y ) echo "Starting download...";;
-  n|N ) echo "Exiting";exit 1;;
-  * ) echo "Invalid answer";exit 1;;
-esac
+# mkdir -p "${ROOT}"
+# echo "Saving data in ""$ROOT"
+# read -r -p "Choose a language (e.g. en, bh, fr, etc.): " choice
+LANG=$1
+# echo "Chosen language: ""$LANG"
+# read -r -p "Continue to download (WARNING: This might be big and can take a long time!)(y/n)? " choice
+# case "$choice" in
+#   y|Y ) echo "Starting download...";;
+#   n|N ) echo "Exiting";exit 1;;
+#   * ) echo "Invalid answer";exit 1;;
+# esac
 wget -c "https://dumps.wikimedia.org/""$LANG""wiki/latest/""${LANG}""wiki-latest-pages-articles.xml.bz2" -P "${ROOT}"
 echo "Processing ""$ROOT"/"$LANG""wiki-latest-pages-articles.xml.bz2"
 bzip2 -c -d "$ROOT"/"$LANG""wiki-latest-pages-articles.xml.bz2" | awk '{print tolower($0);}' | perl -e '
