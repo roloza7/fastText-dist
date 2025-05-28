@@ -90,9 +90,13 @@ real Model::std_log(real x) const {
   return std::log(x + 1e-5);
 }
 
-void Model::sync(real loss) {
-  wi_->sync(0, loss);
-  wo_->sync(1, loss);
+int Model::sync(real loss) {
+  int is = wi_->sync(0, loss);
+  int os = wo_->sync(1, loss);
+  if (is != os) {
+    throw std::runtime_error("Inconsistent sync status between input and output matrices.");
+  }
+  return is;
 }
 
 } // namespace fasttext

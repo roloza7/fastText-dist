@@ -17,7 +17,7 @@ opt: fasttext
 coverage: CXXFLAGS += -O0 -fno-inline -fprofile-arcs --coverage
 coverage: fasttext
 
-debug: CXXFLAGS += -g -O0 -fno-inline
+debug: CXXFLAGS += -g -O0 -fno-inline -fsanitize=address
 debug: fasttext
 
 wasm: webassembly/fasttext_wasm.js

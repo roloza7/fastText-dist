@@ -122,7 +122,7 @@ void QuantMatrix::dump(std::ostream&) const {
   throw std::runtime_error("Operation not permitted on quantized matrices.");
 }
 
-void QuantMatrix::sync(int, real) {
+int QuantMatrix::sync(int, real) {
   throw std::runtime_error("Operation not permitted on quantized matrices.");
 }
 

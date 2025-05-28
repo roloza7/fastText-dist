@@ -693,7 +693,7 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
           loss_ = state->getLoss();
         }
       }
-      if (threadId == 0 && (syncCounter++ % 2) == 0 && args_->nodes > 1) {
+      if (threadId == 0 && (syncCounter++ % 64) == 0 && args_->nodes > 1) {
           model_->sync(loss_);
       }
     }
@@ -702,6 +702,8 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
   }
   if (threadId == 0)
     loss_ = state->getLoss();
+
+  while (args_->nodes > 1 && threadId == 0 && model_->sync(-1)) {}
 
   ifs.close();
 }
