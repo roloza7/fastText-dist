@@ -19,18 +19,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-<<<<<<< HEAD
 #include <mpi.h>
-=======
-/* Added for Synchronization */
-#include <mutex>
-#include <condition_variable>
-#include <mpi.h>
-#include <dirent.h>
-#include <sys/types.h>
-
-/* End Added Block*/
->>>>>>> main
 
 namespace fasttext {
 
@@ -720,51 +709,9 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
           loss_ = state->getLoss();
         }
       }
-<<<<<<< HEAD
       if (threadId == 0 && (syncCounter++ % 64) == 0 && args_->nodes > 1) {
           model_->sync(loss_);
       }
-=======
-      /* Added for Synchronization */
-      if (args_->tokenCountSyncThreshold > 0 && threadId == 0 && tokenCountForSync > args_->tokenCountSyncThreshold) {
-        syncCtx_.syncReady.store(false, std::memory_order_release);
-
-        // Periodically lock the mutex to synchronize threads
-        bool allThreadsWaiting = false;
-        do {
-          std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Busy waiting, but it's only one thread so it <should> be fine
-          std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
-          allThreadsWaiting = (syncCtx_.waitingThreads == args_->thread - 1); 
-        } while (!allThreadsWaiting);
-
-        // Every thread has blocked, so we can now synchronize
-        // Print for debug
-        if (args_->verbose > 2) { // This will spam the console, so use with caution
-          std::cout << "Synchronizing threads, token count: "
-                    << tokenCountForSync << std::endl;
-        }
-        // (Do MPI Stuff)
-        model_->synchronize();
-
-        // Reset the token count for synchronization
-        {
-          std::unique_lock<std::mutex> lock(syncCtx_.syncTresholdMutex);
-
-          int tokensAddedSinceLastSync;
-          MPI_Allreduce(
-              &tokenCountForSync, &tokensAddedSinceLastSync, 1, MPI_INT64_T,
-              MPI_SUM, MPI_COMM_WORLD);
-          
-          tokenCount_ += tokensAddedSinceLastSync - tokenCountForSync; // <- Update the global token count (account for double addition since we have been adding to it in each thread)
-
-
-          tokenCountForSync = 0;
-          syncCtx_.syncReady.store(true, std::memory_order_release);
-          syncCtx_.syncTresholdCondVar.notify_all();
-        }
-      }
-      /* End Added block */
->>>>>>> main
     }
   } catch (DenseMatrix::EncounteredNaNError&) {
     trainException_ = std::current_exception();
