@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-CXX = mpicxx
+CXX = mpic++
 CXXFLAGS = -pthread -std=c++17 -march=native
 OBJS = args.o autotune.o matrix.o dictionary.o loss.o productquantizer.o densematrix.o quantmatrix.o vector.o model.o utils.o meter.o fasttext.o
 INCLUDES = -I.
@@ -17,7 +17,7 @@ opt: fasttext
 coverage: CXXFLAGS += -O0 -fno-inline -fprofile-arcs --coverage
 coverage: fasttext
 
-debug: CXXFLAGS += -g -O0 -fno-inline
+debug: CXXFLAGS += -g -O0 -fno-inline -fsanitize=address
 debug: fasttext
 
 wasm: webassembly/fasttext_wasm.js

@@ -10,6 +10,7 @@
 #include <iostream>
 #include <queue>
 #include <stdexcept>
+#include <mpi.h>
 #include "args.h"
 #include "autotune.h"
 #include "fasttext.h"
@@ -361,6 +362,10 @@ void train(const std::vector<std::string> args) {
   std::shared_ptr<FastText> fasttext = std::make_shared<FastText>();
   std::string outputFileName;
 
+<<<<<<< HEAD
+  if (a.nodes > 1)
+    MPI_Init(nullptr, nullptr); 
+=======
   if (a.tokenCountSyncThreshold > 0) {
     std::cout << "Using MPI for distributed training." << std::endl;
     MPI_Init(nullptr, nullptr);
@@ -368,6 +373,7 @@ void train(const std::vector<std::string> args) {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   }
+>>>>>>> main
 
   if (a.hasAutotune() &&
       a.getAutotuneModelSize() != Args::kUnlimitedModelSize) {
@@ -387,6 +393,17 @@ void train(const std::vector<std::string> args) {
   } else {
     fasttext->train(a);
   }
+<<<<<<< HEAD
+
+  if (a.nodes > 1) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Finalize();
+    if (rank != 0) {
+      return; // Only the master node saves the model.
+    }
+  }
+=======
   
   if (a.tokenCountSyncThreshold > 0) {
     int rank;
@@ -397,6 +414,7 @@ void train(const std::vector<std::string> args) {
       return;
     }
   } 
+>>>>>>> main
 
   fasttext->saveModel(outputFileName);
   fasttext->saveVectors(a.output + ".vec");

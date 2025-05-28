@@ -19,6 +19,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+<<<<<<< HEAD
+#include <mpi.h>
+=======
 /* Added for Synchronization */
 #include <mutex>
 #include <condition_variable>
@@ -27,6 +30,7 @@
 #include <sys/types.h>
 
 /* End Added Block*/
+>>>>>>> main
 
 namespace fasttext {
 
@@ -639,15 +643,39 @@ bool FastText::keepTraining(const int64_t ntokens) const {
 
 void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
   std::ifstream ifs(args_->input);
-  utils::seek(ifs, threadId * utils::size(ifs) / args_->thread);
 
-  Model::State state(args_->dim, output_->size(0), threadId + args_->seed);
+  int64_t seekPos;
+  int64_t ntokens;
+  Model::State* state;
+  if (args_->nodes > 1) {
+    int rank;
+    int worldSize;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
 
-  const int64_t ntokens = dict_->ntokens();
+    int64_t fileSize = utils::size(ifs);
+    int64_t chunkSize = fileSize / (worldSize * args_->thread);
+
+    int64_t chunkIndex = rank * args_->thread + threadId;
+    seekPos = chunkIndex * chunkSize;
+
+    state = new Model::State(args_->dim, output_->size(0), chunkIndex + args_->seed);
+
+    ntokens = dict_->ntokens() / worldSize;
+
+  } else {
+    seekPos = threadId * utils::size(ifs) / args_->thread;
+    state = new Model::State(args_->dim, output_->size(0), threadId + args_->seed);
+    ntokens = dict_->ntokens();
+  }
+
   int64_t localTokenCount = 0;
   int64_t tokenCountForSync = 0;        // <- Added, required for MPI synchronization
   std::vector<int32_t> line, labels;
   uint64_t callbackCounter = 0;
+  uint64_t syncCounter = 0;
+  utils::seek(ifs, seekPos);
+
   try {
     while (keepTraining(ntokens)) {
       /* Added for Synchronization (skipped if no sync threshold) */
@@ -676,22 +704,27 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
       if (args_->model == model_name::sup) {
         // debug: wait
         localTokenCount += dict_->getLine(ifs, line, labels);
-        supervised(state, lr, line, labels);
+        supervised(*state, lr, line, labels);
       } else if (args_->model == model_name::cbow) {
-        localTokenCount += dict_->getLine(ifs, line, state.rng);
-        cbow(state, lr, line);
+        localTokenCount += dict_->getLine(ifs, line, state->rng);
+        cbow(*state, lr, line);
       } else if (args_->model == model_name::sg) {
-        localTokenCount += dict_->getLine(ifs, line, state.rng);
-        skipgram(state, lr, line);
+        localTokenCount += dict_->getLine(ifs, line, state->rng);
+        skipgram(*state, lr, line);
       }
       if (localTokenCount > args_->lrUpdateRate) {
         tokenCount_ += localTokenCount;
         tokenCountForSync += localTokenCount; // <- Added, required for MPI sync
         localTokenCount = 0;
         if (threadId == 0 && args_->verbose > 1) {
-          loss_ = state.getLoss();
+          loss_ = state->getLoss();
         }
       }
+<<<<<<< HEAD
+      if (threadId == 0 && (syncCounter++ % 64) == 0 && args_->nodes > 1) {
+          model_->sync(loss_);
+      }
+=======
       /* Added for Synchronization */
       if (args_->tokenCountSyncThreshold > 0 && threadId == 0 && tokenCountForSync > args_->tokenCountSyncThreshold) {
         syncCtx_.syncReady.store(false, std::memory_order_release);
@@ -731,12 +764,16 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
         }
       }
       /* End Added block */
+>>>>>>> main
     }
   } catch (DenseMatrix::EncounteredNaNError&) {
     trainException_ = std::current_exception();
   }
   if (threadId == 0)
-    loss_ = state.getLoss();
+    loss_ = state->getLoss();
+
+  while (args_->nodes > 1 && threadId == 0 && model_->sync(-1)) {}
+
   ifs.close();
 }
 
@@ -923,7 +960,14 @@ void FastText::startThreads(const TrainCallback& callback) {
     // webassembly can't instantiate `std::thread`
     trainThread(0, callback);
   }
-  const int64_t ntokens = dict_->ntokens();
+  int64_t ntokens;
+  if (args_->nodes > 1) {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    ntokens = dict_->ntokens() / args_->nodes;
+  } else {
+    ntokens = dict_->ntokens();
+  }
   // Same condition as trainThread
   while (keepTraining(ntokens)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

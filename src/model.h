@@ -70,6 +70,7 @@ class Model {
       State& state);
   void synchronize(void);
   void computeHidden(const std::vector<int32_t>& input, State& state) const;
+  int sync(real loss);
 
   real std_log(real) const;
 

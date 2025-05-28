@@ -14,6 +14,8 @@
 #include <ostream>
 #include <stdexcept>
 #include <vector>
+#include <array>
+#include <mpi.h> // Ensure this is included before any use of MPI_Request
 
 #include "aligned.h"
 #include "matrix.h"
@@ -27,6 +29,14 @@ class DenseMatrix : public Matrix {
  protected:
   intgemm::AlignedVector<real> data_;
   void uniformThread(real, int, int32_t);
+
+  // Interpolation factor for MPI
+  real t_ = 0.9;
+  bool init_mpi_ = false; // Flag to check if MPI is initialized
+  // Requests for asynchronous communication
+  intgemm::AlignedVector<real> gather_buffer_; // Buffers for receiving data
+  MPI_Request gather_req_; // Request for receiving data
+  int latest_send_ = 0; // Index of the latest queried buffer
 
  public:
   DenseMatrix();
@@ -76,6 +86,7 @@ class DenseMatrix : public Matrix {
   void save(std::ostream&) const override;
   void load(std::istream&) override;
   void dump(std::ostream&) const override;
+  int sync(int, real) override;
 
   // Synchronization functions
   void synchronize(MPI_Comm comm) override;
