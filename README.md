@@ -80,7 +80,7 @@ For Multi-Node setups, the time of rank 0 is reported, since rank 0 is the last 
 | 8x24  | 16:04            | 0.868  | 0.868  |
 | 16x24 | 14:32                | 0.830  | 0.830  |
 
-While model quality is noticeably smaller with a fixed dataset, we can offset this by increasing the amount of ingested data (since we know have scaling). If your data is small, its probably best to stick to single-node training.
+While model quality is noticeably smaller with a fixed dataset, we can offset this by increasing the amount of ingested data (since we now have scaling). If your data is small, its probably best to stick to single-node training.
 
 > 🚧 **Coming Soon**
 > Benchmarks on distributed models trained on the full (68.61GB) of data
