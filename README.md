@@ -49,7 +49,7 @@ To benchmark this model, I prepare a large language classification dataset from 
 
 After adding labels, shuffling, and splitting the dataset, we are left with 68.61GB of train data and 7.62 of test data.
 
-For most of the benchmarks, I randomly sampled a subset (~20GB) of the full training dataset to acommodate single-node fastthread comparisons.
+For most of the benchmarks, I randomly sampled a subset (~20GB) of the full training dataset to acommodate single-node comparisons. Every benchmark uses this same subset unless otherwise noted.
 
 
 
