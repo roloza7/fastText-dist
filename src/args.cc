@@ -34,11 +34,7 @@ Args::Args() {
   maxn = 6;
   thread = 12;
   lrUpdateRate = 100;
-<<<<<<< HEAD
   nodes = 1;
-=======
-  tokenCountSyncThreshold = 0; // 0 tokens <- no synchronization
->>>>>>> main
   t = 1e-4;
   label = "__label__";
   verbose = 2;
