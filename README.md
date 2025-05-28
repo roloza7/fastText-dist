@@ -6,7 +6,7 @@ An attempt at extending the [Hogwild!](https://people.eecs.berkeley.edu/~brecht/
 
 The patch adds a periodic model "souping" step every 64 iterations, (performed by the main thread of each node). This reduces performance to some extent but at the same allows us to scale training by having more input streams.
 
-This is not equivalent (and does not offer the same guarantees) as standard HogWild!, HogWild++, or synchronized SGD, but is more convenient if have access to several nodes.
+This is not equivalent (and does not offer the same guarantees) as standard HogWild!, HogWild++, or synchronized SGD, but is more convenient if you have access to several nodes.
 
 #### Examples:
 
